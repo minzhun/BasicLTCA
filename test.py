@@ -12,9 +12,9 @@ class LoadCondition:
         self.torque = torque
         self.misalignment = misalignment
 
-        print("----------")
-        print(self.torque)
-        print(self.misalignment)
+        # print("----------")
+        # print(self.torque)
+        # print(self.misalignment)
 
 
 class Relief:
@@ -28,7 +28,7 @@ class Relief:
         self.profile_2 = profile_barrelling
         self.profile_3 = profile_tip
 
-        # range of relief : 0.0 to 1.0
+        # Range of Relief : 0.0 to 1.0
         self.lead_start = 0.0
         self.lead_end = 1.0
         self.profile_start = 0.0
@@ -49,17 +49,42 @@ class Relief:
 
         self.profile_start_tip = profile_start_tip
 
-    def lead_relief(self):
+    def lead_relief(self, x):
 
-        pass
+        if self.lead_1 >= 0.0:
+            temp1 = (1.0-x) * self.lead_1 / (self.lead_end-self.lead_start)
+        else:
+            temp1 = x * abs(self.lead_1) / (self.lead_end-self.lead_start)
+        temp2 = abs(self.lead_2) / (0.5*(self.lead_end-self.lead_start))**2 * (x-0.5*(self.lead_end-self.lead_start))**2
+        temp = temp1 + temp2
 
-    def profile_relief(self):
+        # print(temp)
 
-        pass
+        return temp
 
-    def total_relief(self):
+    def profile_relief(self, y):
 
-        pass
+        temp1 = y * abs(self.profile_1) / (self.profile_end-self.profile_start)
+        temp2 = abs(self.profile_2)/ (0.5*(self.profile_end-self.profile_start))**2 * (y-0.5*(self.profile_end-self.profile_start))**2
+        if y >= self.profile_start_tip:
+            temp3 = (y-self.profile_start_tip) / (self.profile_end-self.profile_start_tip) * self.profile_3
+        else:
+            temp3 = 0.0
+        temp = temp1 + temp2 + temp3
+
+        # print(temp)
+
+        return temp
+
+    def total_relief(self, x, y):
+
+        temp1 = self.lead_relief(x)
+        temp2 = self.profile_relief(y)
+        temp = temp1 + temp2
+
+        # print(temp)
+
+        return temp
 
 
 class Gear:
@@ -81,25 +106,29 @@ class Gear:
         # Tip Form and Root Form using Rolling Distance - mm
         self.tip_form = tip_form
         self.root_form = root_form
+        # Relief
+        self.relief = relief
 
         # Calculated in geometry()
+        # Transverse Pitch - mm
         self.pt = 0.0
+        # Transverse Pressure Angle - rad
         self.alpha_t_rad = 0.0
+        # Reference Diameter - mm
+        self.diameter_ref = 0.0
         # Transverse Base Pitch - mm
         self.pbt = 0.0
         # Base Diameter - mm
         self.diameter_base = 0.0
-        # Reference Diameter - mm
-        self.diameter_ref = 0.0
-        # Base Helix Angle
+        # Base Helix Angle - rad
         self.beta_base_rad = 0.0
 
     def geometry(self):
 
         self.pt = math.pi * self.mn / math.cos(self.beta_rad)
         self.alpha_t_rad = math.atan(math.tan(self.alpha_n_rad)/math.cos(self.beta_rad))
-        self.pbt = self.pt * math.cos(self.alpha_t_rad)
         self.diameter_ref = self.z * self.mn / math.cos(self.beta_rad)
+        self.pbt = self.pt * math.cos(self.alpha_t_rad)
         self.diameter_base = self.diameter_ref * math.cos(self.alpha_t_rad)
         self.beta_base_rad = math.asin(math.sin(self.beta_rad)*math.cos(self.alpha_n_rad))
 
@@ -110,17 +139,27 @@ class Gear:
         # print(self.pbt)
         # print(self.diameter_base)
 
-    def calculate_relief(self, coord_in_active_plane):
+    def calculate_relief(self, x, y):
 
-        pass
+        if y == 0.0:
+            temp_relief = 0.0
+        else:
+            temp_x = x / self.b
+            temp_y = (y-self.root_form) / (self.tip_form-self.root_form)
+            temp_relief = self.relief.total_relief(temp_x,temp_y)
+
+        print(temp_relief)
+
+        return temp_relief
 
 
 class GearPair:
 
-    def __init__(self, pinion, wheel, central_distance, profile_shift_coefficient_pinion):
+    def __init__(self, pinion, wheel, central_distance, profile_shift_coefficient_pinion, pinion_driving=1):
 
         self.a = central_distance
         self.x1 = profile_shift_coefficient_pinion
+        self.pinion_driving = pinion_driving
 
         self.z1 = pinion.z
         self.z2 = wheel.z
@@ -144,6 +183,9 @@ class GearPair:
         self.c2 = 0.0
         self.sap_pinion = 0.0
         self.sap_wheel = 0.0
+        self.eap_pinion = 0.0
+        self.eap_wheel = 0.0
+        self.c = 0.0
 
         # Used and Calculated in single_stiffness()
         self.C_M = 0.8
@@ -167,15 +209,21 @@ class GearPair:
 
         self.c1 = 0.5 * self.base_diameter_pinion * math.tan(self.alpha_wt_rad)
         self.c2 = 0.5 * self.base_diameter_wheel * math.tan(self.alpha_wt_rad)
-        self.sap_pinion = self.c1 + self.c2 - self.tip_form_pinion
-        self.sap_wheel = self.c1 + self.c2 - self.tip_form_wheel
+        self.c = self.c1 + self.c2
+        self.sap_pinion = self.c1 + self.c2 - self.tip_form_wheel
+        self.sap_wheel = self.c1 + self.c2 - self.tip_form_pinion
+        self.eap_pinion = self.tip_form_pinion
+        self.eap_wheel = self.tip_form_wheel
 
-        print("----------")
+        # print("----------")
+        # print(self.pbt)
         # print(self.x_pinion)
         # print(self.x_wheel)
-        print(self.x_sum)
-        print(self.sap_pinion)
-        print(self.sap_wheel)
+        # print(self.x_sum)
+        # print(self.sap_pinion)
+        # print(self.eap_pinion)
+        # print(self.sap_wheel)
+        # print(self.eap_wheel)
 
     def single_stiffness(self):
 
@@ -188,42 +236,61 @@ class GearPair:
                                + 0.00529*self.x1**2 + 0.00182*self.x2**2
         self.c_prime = self.C_M * self.C_R * self.C_B * math.cos(self.beta_rad) / self.q_prime
 
-        print("----------")
-        print(self.c_prime)
-        print(self.zn1)
-        print(self.zn2)
+        # print("----------")
+        # print(self.c_prime)
+        # print(self.zn1)
+        # print(self.zn2)
 
     def calculate_te(self, load_condition, n_steps, n_width, n_contact_lines=5, n_iteration=20, tol=0.01):
 
         np.set_printoptions(formatter={'float': '{: 0.4f}'.format})
 
         self.misalignment = load_condition.misalignment
+
         self.pos_x = np.linspace(0.0, self.b_eff, n_width+1, endpoint=True, dtype=float)
-        print(self.pos_x)
         self.pos_y = np.zeros((n_contact_lines, n_width+1))
-        print(self.pos_y)
+        self.pinion_y = np.zeros((n_contact_lines, n_width+1))
+        self.wheel_y = np.zeros((n_contact_lines, n_width+1))
+        self.relief = np.zeros((n_contact_lines, n_width+1))
+
+        # print(self.pos_x)
+        # print(self.pos_y)
 
         for i in range(n_steps):
 
             for j in range(n_contact_lines):
-
                 self.pos_y[j] = self.pos_x * math.tan(self.beta_base_rad) + i * self.pbt / n_steps + (j - 2) * self.pbt
 
-            print(self.pos_y)
+            if self.pinion_driving == 1:
+                self.pinion_y = self.pos_y + self.sap_pinion
+                self.wheel_y = self.pbt - self.pos_y + self.c - self.sap_pinion - self.pbt
+            else:
+                self.pinion_y = self.pos_y + self.c - self.sap_wheel - self.pbt
+                self.wheel_y = self.pbt - self.pos_y + self.sap_wheel
 
+            # self.pos_y = np.where(self.pos_y >= 0.0, self.pos_y, -1.)
+            # self.pos_y = np.where(self.pos_y <=self.pbt, self.pos_y, -1.)
+            print(self.pinion_y)
+            print(self.wheel_y)
 
             for ite in range(n_iteration):
 
                 pass
 
 
+#
 load_condition_1 = LoadCondition(100, 10)
+#
 relief_1 = Relief(0.0, 0.0, 0.0, 0.0,0.0)
+relief_2 = Relief(10.0, 0.0, 10.0, 0.0, 0.0)
+#
 pinion_1 = Gear(31, 2.271, 20.0, 25.0, 20.0, 19.775, 8.06, relief_1)
-pinion_1.geometry()
 wheel_1 = Gear(41, 2.271, 20.0, 25.0, 20.0, 24.142, 12.175, relief_1)
+pinion_1.geometry()
 wheel_1.geometry()
+# pinion_1.calculate_relief(10.0,19.775)
+#
 gear_pair_1 = GearPair(pinion_1, wheel_1, 90.0, 0.0)
 gear_pair_1.mesh_geometry()
 gear_pair_1.single_stiffness()
-gear_pair_1.calculate_te(load_condition_1, 1, 10)
+# gear_pair_1.calculate_te(load_condition_1, 1, 10)
