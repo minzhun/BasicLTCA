@@ -4,17 +4,17 @@ import numpy as np
 
 class LoadCondition:
 
-    def __init__(self, torque, misalignment):
+    def __init__(self, torque_pinion, misalignment):
 
-        # Torque - N*m
+        # Pinion Torque - N*m
         # Misalignment - um
 
-        self.torque = torque
+        self.torque = torque_pinion
         self.misalignment = misalignment
 
-        # print("----------")
-        # print(self.torque)
-        # print(self.misalignment)
+        print("----------")
+        print(self.torque)
+        print(self.misalignment)
 
 
 class Relief:
@@ -132,23 +132,23 @@ class Gear:
         self.diameter_base = self.diameter_ref * math.cos(self.alpha_t_rad)
         self.beta_base_rad = math.asin(math.sin(self.beta_rad)*math.cos(self.alpha_n_rad))
 
-        # print("----------")
-        # print(self.pt)
-        # print(math.degrees(self.alpha_t_rad))
-        # print(self.diameter_ref)
-        # print(self.pbt)
-        # print(self.diameter_base)
+        print("----------")
+        print(self.pt)
+        print(math.degrees(self.alpha_t_rad))
+        print(self.diameter_ref)
+        print(self.pbt)
+        print(self.diameter_base)
 
     def calculate_relief(self, x, y):
 
-        if y == 0.0:
-            temp_relief = 0.0
+        if y == -1.0:
+            temp_relief = -1.0
         else:
             temp_x = x / self.b
             temp_y = (y-self.root_form) / (self.tip_form-self.root_form)
             temp_relief = self.relief.total_relief(temp_x,temp_y)
 
-        print(temp_relief)
+        # print(temp_relief)
 
         return temp_relief
 
@@ -197,9 +197,8 @@ class GearPair:
         self.c_prime = 0.0
 
         # Used and Calculated in calculate_te()
-        self.te = []
-        # self.pos_x = np.zeros(1)
-        # self.pos_y = np.zeros(1)
+        self.cal_relief_pinion = pinion.calculate_relief
+        self.cal_relief_wheel = wheel.calculate_relief
 
     def mesh_geometry(self):
 
@@ -215,15 +214,15 @@ class GearPair:
         self.eap_pinion = self.tip_form_pinion
         self.eap_wheel = self.tip_form_wheel
 
-        # print("----------")
-        # print(self.pbt)
-        # print(self.x_pinion)
-        # print(self.x_wheel)
-        # print(self.x_sum)
-        # print(self.sap_pinion)
-        # print(self.eap_pinion)
-        # print(self.sap_wheel)
-        # print(self.eap_wheel)
+        print("----------")
+        print(self.pbt)
+        print(self.x1)
+        print(self.x2)
+        print(self.x_sum)
+        print(self.sap_pinion)
+        print(self.eap_pinion)
+        print(self.sap_wheel)
+        print(self.eap_wheel)
 
     def single_stiffness(self):
 
@@ -236,50 +235,142 @@ class GearPair:
                                + 0.00529*self.x1**2 + 0.00182*self.x2**2
         self.c_prime = self.C_M * self.C_R * self.C_B * math.cos(self.beta_rad) / self.q_prime
 
-        # print("----------")
-        # print(self.c_prime)
-        # print(self.zn1)
-        # print(self.zn2)
+        # TODO
+        # self.c_prime = 17.0927
 
-    def calculate_te(self, load_condition, n_steps, n_width, n_contact_lines=5, n_iteration=20, tol=0.01):
+        print("----------")
+        print(self.c_prime)
+        print(self.zn1)
+        print(self.zn2)
+
+    def calculate_te(self, load_condition, n_steps, n_width, n_contact_lines=5, n_iteration=20, tol=0.001):
 
         np.set_printoptions(formatter={'float': '{: 0.4f}'.format})
 
-        self.misalignment = load_condition.misalignment
+        te = []
 
-        self.pos_x = np.linspace(0.0, self.b_eff, n_width+1, endpoint=True, dtype=float)
-        self.pos_y = np.zeros((n_contact_lines, n_width+1))
-        self.pinion_y = np.zeros((n_contact_lines, n_width+1))
-        self.wheel_y = np.zeros((n_contact_lines, n_width+1))
-        self.relief = np.zeros((n_contact_lines, n_width+1))
+        torque = load_condition.torque
+        base_force = torque * 1000.0 / self.base_diameter_pinion * 2.
+        print("----------")
+        print(base_force)
 
-        # print(self.pos_x)
-        # print(self.pos_y)
+        misalignment = load_condition.misalignment
+
+        print("----------")
 
         for i in range(n_steps):
 
+            # Define Contact Line Related
+
+            x_pos = np.linspace(0.0, self.b_eff, n_width, endpoint=False, dtype=float)
+            x_pos = x_pos + 0.5 * self.b_eff / n_width
+            y_pos = np.zeros((n_contact_lines, n_width))
+
+            # print("----------")
+            # print(x_pos)
+
             for j in range(n_contact_lines):
-                self.pos_y[j] = self.pos_x * math.tan(self.beta_base_rad) + i * self.pbt / n_steps + (j - 2) * self.pbt
+                y_pos[j] = x_pos * math.tan(self.beta_base_rad) + i * self.pbt / n_steps + (j - 2) * self.pbt
 
             if self.pinion_driving == 1:
-                self.pinion_y = self.pos_y + self.sap_pinion
-                self.wheel_y = self.pbt - self.pos_y + self.c - self.sap_pinion - self.pbt
+                y_pinion = y_pos + self.sap_pinion
+                y_wheel = self.pbt - y_pos + self.c - self.sap_pinion - self.pbt
             else:
-                self.pinion_y = self.pos_y + self.c - self.sap_wheel - self.pbt
-                self.wheel_y = self.pbt - self.pos_y + self.sap_wheel
+                y_pinion = y_pos + self.c - self.sap_wheel - self.pbt
+                y_wheel = self.pbt - y_pos + self.sap_wheel
 
-            # self.pos_y = np.where(self.pos_y >= 0.0, self.pos_y, -1.)
-            # self.pos_y = np.where(self.pos_y <=self.pbt, self.pos_y, -1.)
-            print(self.pinion_y)
-            print(self.wheel_y)
+            # print(y_pos)
+
+            y_pinion = np.where((y_pinion - self.sap_pinion) >= -1e-6, y_pinion, -1.)
+            y_pinion = np.where((y_pinion - self.eap_pinion) <= 1e-6, y_pinion, -1.)
+            y_wheel = np.where((y_wheel - self.sap_wheel) >= -1e-6, y_wheel, -1.)
+            y_wheel = np.where((y_wheel - self.eap_wheel) <= 1e-6, y_wheel, -1.)
+
+            # print("----------")
+            # print(y_pinion)
+            # print(y_wheel)
+
+            relief_pinion = np.zeros((n_contact_lines, n_width))
+            relief_wheel = np.zeros((n_contact_lines, n_width))
+            relief_contact_line = np.zeros((n_contact_lines, n_width))
+
+            for j in range(n_contact_lines):
+                for k in range(n_width):
+                    relief_pinion[j][k] = self.cal_relief_pinion(x_pos[k], y_pinion[j][k])
+                    relief_wheel[j][k] = self.cal_relief_wheel(x_pos[k], y_wheel[j][k])
+                    relief_contact_line[j][k] = relief_pinion[j][k] + relief_wheel[j][k]
+
+            # print("----------")
+            # print(relief_contact_line)
+
+            misalignment_contact_line = np.zeros((n_contact_lines, n_width))
+
+            for j in range(n_contact_lines):
+                for k in range(n_width):
+                    if y_pinion[j][k] == -1.:
+                        misalignment_contact_line[j][k] = -1.
+                    else:
+                        if misalignment >= 0.0:
+                            misalignment_contact_line[j][k] = x_pos[k] / self.b_eff * misalignment
+                        else:
+                            misalignment_contact_line[j][k] = (self.b_eff-x_pos[k]) / self.b_eff * abs(misalignment)
+
+            # print("----------")
+            # print(misalignment_contact_line)
+
+            relief_and_misalignment_contact_line = relief_contact_line + misalignment_contact_line
+            relief_and_misalignment_contact_line_1 = relief_and_misalignment_contact_line[relief_and_misalignment_contact_line > -1e-6]
+
+            if len(relief_and_misalignment_contact_line_1) == 0:
+                relief_and_misalignment_contact_line_1 = y_pinion[y_pinion > 0.0]
+                relief_and_misalignment_contact_line_1[:] = 0.0
+
+            # print(relief_and_misalignment_contact_line_1)
+
+            temp_te = base_force / self.b_eff / self.c_prime
+            converge_or_not = 0
+            ite_number = 0
 
             for ite in range(n_iteration):
 
-                pass
+                deflection_contact_line_1 = temp_te - relief_and_misalignment_contact_line_1
+                deflection_contact_line_1 = deflection_contact_line_1[deflection_contact_line_1 > 0.0]
+                temp_deflection = np.sum(deflection_contact_line_1) * math.cos(self.beta_base_rad)
+                diff = base_force - temp_deflection * self.b_eff / n_width * self.c_prime
+
+                # print("te  ", temp_te)
+                # print("deflection  ", temp_deflection)
+                # print("diff  ", diff)
+                # print(deflection_contact_line_1)
+                # print("\n")
+
+                if abs(diff) < base_force * tol:
+                    te.append(temp_te)
+                    converge_or_not = 1
+                    ite_number = ite
+                    break
+                else:
+                    if diff < 0.0:
+                        delta = min(abs(temp_te*0.5), abs(diff/self.b_eff/self.c_prime))
+                        delta = -1.*delta
+                    else:
+                        delta = min(abs(temp_te*2.), abs(diff/self.b_eff/self.c_prime))
+                    temp_te = temp_te + delta
+
+            if converge_or_not == 1:
+                print("step ", i, " converged at ", ite_number)
+            else:
+                print("step ", i, "not converged")
+
+        te = np.array(te)
+        te_peak = np.max(te) - np.min(te)
+
+        print(te)
+        print(len(te))
+        print(te_peak)
 
 
-#
-load_condition_1 = LoadCondition(100, 10)
+load_condition_1 = LoadCondition(500.0, 0.0)
 #
 relief_1 = Relief(0.0, 0.0, 0.0, 0.0,0.0)
 relief_2 = Relief(10.0, 0.0, 10.0, 0.0, 0.0)
@@ -288,9 +379,8 @@ pinion_1 = Gear(31, 2.271, 20.0, 25.0, 20.0, 19.775, 8.06, relief_1)
 wheel_1 = Gear(41, 2.271, 20.0, 25.0, 20.0, 24.142, 12.175, relief_1)
 pinion_1.geometry()
 wheel_1.geometry()
-# pinion_1.calculate_relief(10.0,19.775)
 #
 gear_pair_1 = GearPair(pinion_1, wheel_1, 90.0, 0.0)
 gear_pair_1.mesh_geometry()
 gear_pair_1.single_stiffness()
-# gear_pair_1.calculate_te(load_condition_1, 1, 10)
+gear_pair_1.calculate_te(load_condition_1, 32, 40)
