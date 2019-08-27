@@ -163,7 +163,7 @@ class Gear:
 
 class GearPair:
 
-    def __init__(self, pinion, wheel, central_distance, profile_shift_coefficient_pinion, pinion_driving=1):
+    def __init__(self, pinion, wheel, central_distance, profile_shift_coefficient_pinion, active_flank="right", pinion_driving=1):
 
         # Input
         # Centre Distance - mm
@@ -172,6 +172,8 @@ class GearPair:
         self.x1 = profile_shift_coefficient_pinion
         # If Pinion is driving or not
         self.pinion_driving = pinion_driving
+        # Active Flank
+        self.active = active_flank
 
         # Property of Gear Pair
         self.z1 = pinion.z
@@ -271,6 +273,7 @@ class GearPair:
 
         # Output
         te = []
+        contact_length = []
 
         print("----- Steps -----")
 
@@ -285,7 +288,10 @@ class GearPair:
             y_pos = np.zeros((n_contact_lines, n_width))
 
             for j in range(n_contact_lines):
-                y_pos[j] = x_pos * math.tan(self.beta_base_rad) + i * self.pbt / n_steps + (j - 2) * self.pbt
+                if self.active == "right":
+                    y_pos[j] = x_pos * math.tan(self.beta_base_rad) - i * self.pbt / n_steps + (j - 2) * self.pbt
+                else:
+                    y_pos[j] = x_pos * math.tan(self.beta_base_rad) + i * self.pbt / n_steps + (j - 2) * self.pbt
 
             # print("----- Position in Active Plane Coord -----")
             # print(x_pos)
@@ -301,10 +307,10 @@ class GearPair:
                 y_pinion = self.pbt - y_pos + self.c - self.sap_wheel - self.pbt
                 y_wheel = y_pos + self.sap_wheel
 
-            y_pinion = np.where((y_pinion - self.sap_pinion) >= -1e-6, y_pinion, -1.)
-            y_pinion = np.where((y_pinion - self.eap_pinion) <= 1e-6, y_pinion, -1.)
-            y_wheel = np.where((y_wheel - self.sap_wheel) >= -1e-6, y_wheel, -1.)
-            y_wheel = np.where((y_wheel - self.eap_wheel) <= 1e-6, y_wheel, -1.)
+            y_pinion = np.where((y_pinion - self.sap_pinion) >= -1e-3, y_pinion, -1.)
+            y_pinion = np.where((y_pinion - self.eap_pinion) <= 1e-3, y_pinion, -1.)
+            y_wheel = np.where((y_wheel - self.sap_wheel) >= -1e-3, y_wheel, -1.)
+            y_wheel = np.where((y_wheel - self.eap_wheel) <= 1e-3, y_wheel, -1.)
 
             # print("----- Position in Gear Coord -----")
             # print(y_pinion)
@@ -383,6 +389,8 @@ class GearPair:
 
                 if abs(diff) < base_force * tol:
                     te.append(temp_te)
+                    temp_contact_length = self.b_eff / n_width * len(deflection_contact_line_1) / math.cos(self.beta_base_rad)
+                    contact_length.append(temp_contact_length)
                     converge_or_not = 1
                     ite_number = ite
                     break
@@ -401,13 +409,17 @@ class GearPair:
 
         te = np.array(te)
         te_peak = np.max(te) - np.min(te)
+        contact_length = np.array(contact_length)
 
         print("----- TE -----")
         print(te)
+        print(contact_length)
         print("Number of Steps ", len(te))
         print("Peak-Peak TE ", te_peak)
+        print("Contact Length Max ", np.max(contact_length))
+        print("Contact Length Min ", np.min(contact_length))
 
-        return te
+        return te, contact_length
 
 
 # Define Load Condition - Pinion Torque and Misalignment
@@ -418,19 +430,24 @@ relief_1 = Relief(0.0, 0.0, 0.0, 0.0, 0.0)
 relief_2 = Relief(10.0, 10.0, 10.0, 10.0, 0.0)
 # Define Gears
 pinion_1 = Gear(31, 2.271, 20.0, 25.0, 20.0, 19.775, 8.06, relief_2)
-wheel_1 = Gear(41, 2.271, 20.0, 25.0, 20.0, 24.142, 12.175, relief_1)
+wheel_1 = Gear(41, 2.271, 20.0, 25.0, 20.0, 24.142, 12.175, relief_2)
 pinion_1.geometry()
 wheel_1.geometry()
 # Define Gear Pair
 gear_pair_1 = GearPair(pinion_1, wheel_1, 90.0, 0.0)
 gear_pair_1.mesh_geometry()
 gear_pair_1.mesh_stiffness()
-y = gear_pair_1.calculate_te(load_condition_1, 32, 40)
-x = np.arange(32)
+y1, y2 = gear_pair_1.calculate_te(load_condition_2, 32, 1000)
+y1 = np.concatenate((y1,y1))
+y2 = np.concatenate((y2,y2))
+x = np.arange(64)
 # Plot
-plt.title("Basic LTCA TE")
-plt.xlabel("Step")
+plt.subplot(2, 1, 1)
+plt.plot(x, y1)
+plt.title("Basic LTCA")
 plt.ylabel("TE")
-plt.plot(x,y)
+plt.subplot(2, 1, 2)
+plt.plot(x,y2)
+plt.xlabel("Step")
+plt.ylabel("Length of Contact")
 plt.show()
-# add
